@@ -228,6 +228,11 @@ services:
         /entrypoint airflow version
         echo "Fixing ownership of /opt/airflow to 1000:0 ..."
         chown -R "1000:0" /opt/airflow/{logs,dags,plugins,config,sql}
+        echo "Making dags/config/plugins writable by all users ..."
+        # These are bind mounts, so the mode applies on the host too. 'X' sets
+        # the execute/traverse bit on dirs only. setgid (g+s) makes newly created
+        # files inherit the root group so they stay group-writable.
+        chmod -R a+rwX,g+s /opt/airflow/{dags,plugins,config}
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'

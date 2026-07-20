@@ -1,0 +1,288 @@
+# =============================================================================
+# dataworm — Airflow orchestration (proper, distributed CeleryExecutor setup)
+#
+# This replaces the all-in-one `airflow standalone` service that used to live in
+# docker-compose.yml. It runs the real Airflow 3.x process split:
+#
+#   airflow-postgres    dedicated metadata db (persistent run history)
+#   redis               Celery broker
+#   airflow-apiserver   REST API + web UI            (http://localhost:8080)
+#   airflow-scheduler   schedules DAG runs
+#   airflow-dag-processor   parses DAG files
+#   airflow-worker      executes tasks (CeleryExecutor)
+#   airflow-triggerer   runs deferrable/async tasks
+#   airflow-init        one-shot db migrate + admin user + dir permissions
+#   flower              Celery monitoring UI   (profile: flower, :5555)
+#   airflow-cli         debugging shell        (profile: debug)
+#
+# The metadata Postgres here is SEPARATE from the dataworm OLTP `postgres` in
+# docker-compose.yml. Airflow joins the main stack's network (DATAWORM_NETWORK)
+# so DAGs reach the OLTP source (`postgres`) and warehouse (`clickhouse`) by
+# service name — see AIRFLOW_CONN_* below.
+#
+# Quick start (from the repo root, with the main stack already up):
+#   docker compose -f docker-compose.yml up -d postgres clickhouse
+#   docker compose -f docker-compose.airflow.yml build
+#   docker compose -f docker-compose.airflow.yml up -d
+#
+# UI (via Caddy): https://dataworm-airflow.dev1.mnt.group  (login admin / admin)
+#
+# All config/secrets are hardcoded below (demo values — change FERNET_KEY,
+# JWT secret and the admin password for anything real).
+#
+# WARNING: local-development configuration. Not for production as-is.
+# =============================================================================
+
+x-airflow-common: &airflow-common
+  image: dataworm/airflow:3.3.0
+  build:
+    context: ./docker/airflow
+    args:
+      AIRFLOW_VERSION: "3.3.0"
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    # Encrypts connection/variable values. Keep stable or existing encrypted
+    # connections become unreadable. Regenerate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    AIRFLOW__CORE__FERNET_KEY: "kZZTN3qrGdFIc+nsk/7blbDJSPX4rk/1IeFRB/RcgGs="
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__API_AUTH__JWT_SECRET: "change-me-dataworm-jwt-secret"
+    AIRFLOW__API_AUTH__JWT_ISSUER: "dataworm-airflow"
+    # Use the scheduler's simple HTTP health-check server.
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    _PIP_ADDITIONAL_REQUIREMENTS: ''
+    # ---- Pre-wired connections to the dataworm data plane -------------------
+    # OLTP source read by the Bronze extraction DAGs.
+    AIRFLOW_CONN_POSTGRES_SOURCE: 'postgresql://dataworm:dataworm@postgres:5432/warehouse'
+    # ClickHouse warehouse target. Only usable once the ClickHouse provider is
+    # installed (see the optional block in docker/airflow/Dockerfile).
+    AIRFLOW_CONN_CLICKHOUSE_DEFAULT: 'clickhouse://dataworm:dataworm@clickhouse:9000/warehouse'
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/config:/opt/airflow/config
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/sql:/opt/airflow/sql
+  # Runs as the host user's uid so bind-mounted files in ./airflow stay
+  # owner-writable on the host. Must match the chown in airflow-init below.
+  user: "1000:0"
+  networks:
+    - airflow
+    - dataworm
+  depends_on: &airflow-common-depends-on
+    redis:
+      condition: service_healthy
+    airflow-postgres:
+      condition: service_healthy
+
+services:
+  # ---- Airflow metadata store (NOT the OLTP source) -------------------------
+  airflow-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "airflow" ]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    networks:
+      - airflow
+    restart: always
+
+  redis:
+    image: redis:7.2-bookworm
+    expose:
+      - 6379
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    networks:
+      - airflow
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    # Re-list the anchor's networks (a service `networks:` replaces the merged
+    # sequence, not extends it) and add the Caddy ingress network so the Caddy
+    # docker-proxy can reach the UI.
+    networks:
+      airflow:
+      dataworm:
+      caddy-ingress:
+    labels:
+      caddy: dataworm-airflow.dev1.mnt.group
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.reverse_proxy.0_header_up: X-Real-IP {remote}
+      caddy.encode: zstd gzip
+      caddy.log:
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: [ "CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"' ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: [ "CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"' ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+    healthcheck:
+      test: [ "CMD-SHELL", 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"' ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    environment:
+      <<: *airflow-common-env
+      # Required to handle warm shutdown of the celery workers properly.
+      DUMB_INIT_SETSID: "0"
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-apiserver:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test: [ "CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"' ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mem_available=$$(($$(getconf _PHYS_PAGES) * $$(getconf PAGE_SIZE) / 1048576))
+        cpus_available=$$(grep -cE 'cpu[0-9]+' /proc/stat)
+        if (( mem_available < 4000 )); then
+          echo -e "\033[1;33mWARNING!!!: <4GB RAM available to Docker (have $${mem_available}MB). Airflow may be unstable.\e[0m"
+        fi
+        if (( cpus_available < 2 )); then
+          echo -e "\033[1;33mWARNING!!!: <2 CPUs available to Docker (have $${cpus_available}).\e[0m"
+        fi
+        echo "Creating opt dirs if missing..."
+        mkdir -v -p /opt/airflow/{logs,dags,plugins,config,sql}
+        echo "Airflow version:"
+        /entrypoint airflow version
+        echo "Fixing ownership of /opt/airflow to 1000:0 ..."
+        chown -R "1000:0" /opt/airflow/{logs,dags,plugins,config,sql}
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: 'admin'
+      _AIRFLOW_WWW_USER_PASSWORD: 'admin'
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    user: "0:0"
+
+  # Celery monitoring UI. Enable with: --profile flower
+  flower:
+    <<: *airflow-common
+    command: celery flower
+    profiles:
+      - flower
+    ports:
+      - "5555:5555"
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://localhost:5555/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Debugging shell. Enable with: --profile debug run --rm airflow-cli <cmd>
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c
+      - airflow
+
+volumes:
+  airflow-db:
+
+networks:
+  # Internal network for Airflow's own components (metadata db, broker, workers).
+  airflow:
+    driver: bridge
+  # The dataworm data plane's network (created by docker-compose.yml). Lets DAGs
+  # reach `postgres` (OLTP) and `clickhouse` (warehouse) by service name.
+  dataworm:
+    external: true
+    name: dataworm_default
+  # Shared ingress network owned by the Caddy (caddy-docker-proxy) stack.
+  # Create it once with: docker network create caddy-ingress
+  caddy-ingress:
+    external: true

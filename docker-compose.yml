@@ -1,0 +1,172 @@
+# =============================================================================
+# End-to-end analytics stack:
+#   postgres          OLTP source (Odoo-inspired schema; seeded by `seed`)
+#   clickhouse        Data warehouse (Bronze/Silver/Gold target)
+#   metabase          BI / dashboards (connects to ClickHouse)
+#   seed              One-shot job that builds the schema + generates data (profile)
+#   airflow           ETL orchestration — all-in-one `airflow standalone`
+#
+# Quick start:
+#   docker compose up -d postgres clickhouse metabase   # data plane
+#   docker compose --profile seed up seed               # build schema + generate data
+#   docker compose up -d airflow                        # orchestration
+#
+# Airflow UI:  http://localhost:8080   (login admin / admin)
+#
+# Values are hardcoded below — edit them here to change credentials, ports, or
+# seed volumes. Demo credentials; change for anything real.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dataworm
+      POSTGRES_PASSWORD: dataworm
+      POSTGRES_DB: warehouse
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U dataworm -d warehouse" ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Web SQL/admin UI for the OLTP postgres above. Exposed via Caddy at
+  # https://dataworm-pgadmin.dev1.mnt.group (login admin@admin.postgres /
+  # admin). The `postgres` server is pre-registered from
+  # postgres/pgadmin/servers.json; enter the DB password `dataworm` on first
+  # connect (pgAdmin then remembers it).
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.postgres
+      PGADMIN_DEFAULT_PASSWORD: admin
+      # Single-user mode: skip the login screen and the master password prompt.
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      # Auto-imported on first launch — pre-registers the OLTP `postgres` server.
+      - ./postgres/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # `default` keeps it talking to postgres; `caddy-ingress` lets the Caddy
+    # docker-proxy reach it.
+    networks:
+      default:
+      caddy-ingress:
+    labels:
+      caddy: dataworm-pgadmin.dev1.mnt.group
+      caddy.reverse_proxy: "{{upstreams 80}}"
+      caddy.reverse_proxy.0_header_up: X-Real-IP {remote}
+      caddy.encode: zstd gzip
+      caddy.log:
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    environment:
+      CLICKHOUSE_USER: dataworm
+      CLICKHOUSE_PASSWORD: dataworm
+      CLICKHOUSE_DB: warehouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123" # HTTP / Metabase
+      - "9000:9000" # native protocol
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - chdata:/var/lib/clickhouse
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1" ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  metabase:
+    image: metabase/metabase:latest
+    environment:
+      # H2 metadata store persisted to a volume (fine for a portfolio project;
+      # switch MB_DB_* to Postgres for a production-style setup).
+      MB_DB_TYPE: h2
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_PLUGINS_DIR: /plugins
+    volumes:
+      - mbdata:/metabase-data
+      # The ClickHouse driver jar is NOT bundled with Metabase — drop it here.
+      # See metabase/download-clickhouse-driver.sh
+      - ./metabase/plugins:/plugins
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    # `default` keeps it talking to clickhouse; `caddy-ingress` lets the Caddy
+    # docker-proxy reach it.
+    networks:
+      default:
+      caddy-ingress:
+    labels:
+      caddy: dataworm-metabase.dev1.mnt.group
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+      caddy.reverse_proxy.0_header_up: X-Real-IP {remote}
+      caddy.encode: zstd gzip
+      caddy.log:
+    restart: unless-stopped
+
+  # One-shot seeding job. Runs only under the `seed` profile so it never starts
+  # with the normal `up`. Uses the postgres image purely for bash + psql.
+  # Edit the volumes here (or override inline, e.g. `-e N_ORDERS=10000000`) to
+  # scale up to full portfolio size (100000 / 20000 / 10000000).
+  seed:
+    image: postgres:16
+    profiles: [ "seed" ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: dataworm
+      PGPASSWORD: dataworm
+      PGDATABASE: warehouse
+      N_CUSTOMERS: 10000
+      N_PRODUCTS: 2000
+      N_ORDERS: 200000
+      HISTORY_DAYS: 730
+      TAX_RATE: 0.15
+      SEED: 0.42
+    volumes:
+      - ./postgres:/seed:ro
+    working_dir: /seed
+    entrypoint: [ "bash", "./seed.sh" ]
+    restart: "no"
+  # ---- Airflow (orchestration) ----------------------------------------------
+  # Airflow now lives in its own compose file — a proper distributed
+  # CeleryExecutor stack (dedicated metadata Postgres + Redis + separate
+  # apiserver/scheduler/worker/triggerer/dag-processor) with persistent run
+  # history, instead of the old all-in-one `airflow standalone` service.
+  #
+  #   docker compose -f docker-compose.airflow.yml --env-file .env.airflow build
+  #   docker compose -f docker-compose.airflow.yml --env-file .env.airflow up -d
+  #
+  # Its DAGs reach this stack's `postgres` (OLTP) and `clickhouse` (warehouse)
+  # by joining this compose's network. See docker-compose.airflow.yml.
+
+volumes:
+  pgdata:
+  chdata:
+  mbdata:
+  pgadmin-data:
+
+networks:
+  # Shared ingress network owned by the Caddy (caddy-docker-proxy) stack.
+  # Create it once with: docker network create caddy-ingress
+  caddy-ingress:
+    external: true

@@ -113,13 +113,8 @@ the schema from scratch (it drops and recreates the OLTP tables).
 DAGs in [`airflow/dags/`](airflow/dags/) are deployed to the dev server by
 [`.github/workflows/sync-dags.yml`](.github/workflows/sync-dags.yml). On every
 push to `main` touching `airflow/dags/**` (or a manual run from the Actions
-tab) it:
-
-1. **Validates** — installs Airflow 3.3.0 + the same providers as
-   [`docker/airflow/Dockerfile`](docker/airflow/Dockerfile) and fails if any
-   DAG has import errors, so broken DAGs never reach the server.
-2. **Deploys** — `rsync -avz --delete` of `airflow/dags/` to the server's dags
-   folder over SSH (deleting a DAG from the repo removes it from the server).
+tab) it runs `rsync -avz --delete` of `airflow/dags/` to the server's dags
+folder over SSH (deleting a DAG from the repo removes it from the server).
 
 ### One-time setup
 

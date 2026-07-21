@@ -22,7 +22,7 @@ services:
     image: postgres:16
     environment:
       POSTGRES_USER: dataworm
-      POSTGRES_PASSWORD: dataworm
+      POSTGRES_PASSWORD: 12datawrom3
       POSTGRES_DB: warehouse
     ports:
       - "5432:5432"
@@ -134,7 +134,7 @@ services:
       PGHOST: postgres
       PGPORT: 5432
       PGUSER: dataworm
-      PGPASSWORD: dataworm
+      PGPASSWORD: 12datawrom3
       PGDATABASE: warehouse
       N_CUSTOMERS: 10000
       N_VENDORS: 200

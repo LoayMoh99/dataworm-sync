@@ -59,7 +59,7 @@ x-airflow-common: &airflow-common
     _PIP_ADDITIONAL_REQUIREMENTS: ''
     # ---- Pre-wired connections to the dataworm data plane -------------------
     # OLTP source read by the Bronze extraction DAGs.
-    AIRFLOW_CONN_POSTGRES_SOURCE: 'postgresql://dataworm:dataworm@postgres:5432/warehouse'
+    AIRFLOW_CONN_POSTGRES_SOURCE: 'postgresql://dataworm:12datawrom3@postgres:5432/warehouse'
     # ClickHouse warehouse target. Only usable once the ClickHouse provider is
     # installed (see the optional block in docker/airflow/Dockerfile).
     AIRFLOW_CONN_CLICKHOUSE_DEFAULT: 'clickhouse://dataworm:dataworm@clickhouse:9000/warehouse'

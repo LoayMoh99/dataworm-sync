@@ -1,14 +1,14 @@
 {
   "Servers": {
     "1": {
-      "Name": "dataworm OLTP (warehouse)",
+      "Name": "warehouse (readonly)",
       "Group": "Servers",
       "Host": "postgres",
       "Port": 5432,
       "MaintenanceDB": "warehouse",
-      "Username": "dataworm",
+      "Username": "readonly_user",
       "SSLMode": "prefer",
-      "Comment": "Odoo-inspired OLTP source, seeded by the `seed` job."
+      "Comment": "Default read-only access to warehouse for reporting."
     }
   }
 }

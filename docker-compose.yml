@@ -137,8 +137,11 @@ services:
       PGPASSWORD: dataworm
       PGDATABASE: warehouse
       N_CUSTOMERS: 10000
+      N_VENDORS: 200
       N_PRODUCTS: 2000
       N_ORDERS: 200000
+      N_PURCHASE_ORDERS: 30000
+      QUANTS_PER_PRODUCT: 10
       HISTORY_DAYS: 730
       TAX_RATE: 0.15
       SEED: 0.42

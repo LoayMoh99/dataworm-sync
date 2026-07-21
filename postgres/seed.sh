@@ -15,8 +15,11 @@ cd "$(dirname "$0")"
 
 # Volumes (override via environment).
 N_CUSTOMERS="${N_CUSTOMERS:-100000}"
+N_VENDORS="${N_VENDORS:-2000}"
 N_PRODUCTS="${N_PRODUCTS:-20000}"
 N_ORDERS="${N_ORDERS:-10000000}"
+N_PURCHASE_ORDERS="${N_PURCHASE_ORDERS:-1000000}"
+QUANTS_PER_PRODUCT="${QUANTS_PER_PRODUCT:-10}"
 HISTORY_DAYS="${HISTORY_DAYS:-730}"
 TAX_RATE="${TAX_RATE:-0.15}"
 SEED="${SEED:-0.42}"
@@ -33,11 +36,14 @@ echo ">> 01_schema.sql"
 echo ">> 02_seed_reference.sql"
 "${PSQL[@]}" -f 02_seed_reference.sql
 
-echo ">> 03_generate_data.sql  (customers=$N_CUSTOMERS products=$N_PRODUCTS orders=$N_ORDERS)"
+echo ">> 03_generate_data.sql  (customers=$N_CUSTOMERS vendors=$N_VENDORS products=$N_PRODUCTS orders=$N_ORDERS purchase_orders=$N_PURCHASE_ORDERS)"
 "${PSQL[@]}" \
     -v n_customers="$N_CUSTOMERS" \
+    -v n_vendors="$N_VENDORS" \
     -v n_products="$N_PRODUCTS" \
     -v n_orders="$N_ORDERS" \
+    -v n_purchase_orders="$N_PURCHASE_ORDERS" \
+    -v quants_per_product="$QUANTS_PER_PRODUCT" \
     -v history_days="$HISTORY_DAYS" \
     -v tax_rate="$TAX_RATE" \
     -v seed="$SEED" \

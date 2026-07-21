@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# SSH deploy keys must never be committed
+dataworm_deploy_key
+dataworm_deploy_key.pub
+*.pem

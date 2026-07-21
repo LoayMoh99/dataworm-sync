@@ -108,6 +108,47 @@ the schema from scratch (it drops and recreates the OLTP tables).
     └── download-clickhouse-driver.sh
 ```
 
+## DAG deployment (CI/CD)
+
+DAGs in [`airflow/dags/`](airflow/dags/) are deployed to the dev server by
+[`.github/workflows/sync-dags.yml`](.github/workflows/sync-dags.yml). On every
+push to `main` touching `airflow/dags/**` (or a manual run from the Actions
+tab) it:
+
+1. **Validates** — installs Airflow 3.3.0 + the same providers as
+   [`docker/airflow/Dockerfile`](docker/airflow/Dockerfile) and fails if any
+   DAG has import errors, so broken DAGs never reach the server.
+2. **Deploys** — `rsync -avz --delete` of `airflow/dags/` to the server's dags
+   folder over SSH (deleting a DAG from the repo removes it from the server).
+
+### One-time setup
+
+1. Generate a dedicated deploy key pair (do this **outside** the repo):
+
+   ```bash
+   ssh-keygen -t ed25519 -C "github-actions-dataworm-sync" -f ~/dataworm_deploy_key -N ""
+   ```
+
+2. On the dev server, append the **public** key (`.pub`) to the deploy user's
+   `~/.ssh/authorized_keys`; that user needs write access to the dags folder
+   the Airflow compose stack mounts (the `airflow/dags/` path of the checkout
+   the server runs from).
+
+3. Capture the server's host key: `ssh-keyscan -p <port> <host>`.
+
+4. In GitHub → Settings → Environments → create `dev` and add secrets:
+
+   | Secret | Value |
+   |---|---|
+   | `SSH_PRIVATE_KEY` | contents of the **private** key file |
+   | `SSH_KNOWN_HOSTS` | `ssh-keyscan` output |
+   | `SSH_HOST` / `SSH_USER` | dev server address and SSH user |
+   | `SSH_PORT` | optional, defaults to 22 |
+   | `AIRFLOW_DAGS_PATH` | absolute path of the mounted dags folder on the server |
+
+5. Delete the local private key once stored in GitHub. The dag-processor picks
+   up synced changes within its refresh interval (~5 min by default).
+
 ## Status
 
 - [x] PostgreSQL OLTP source (Odoo-inspired schema) + configurable data generator

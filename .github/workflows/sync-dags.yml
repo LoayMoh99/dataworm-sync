@@ -37,5 +37,5 @@ jobs:
                cd '${DEPLOY_PATH}'
                git fetch origin main
                git checkout main
-               git pull --ff-only origin main
+               git reset --hard origin/main
                echo 'Now at:' && git log --oneline -1"

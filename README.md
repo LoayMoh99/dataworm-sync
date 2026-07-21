@@ -113,13 +113,12 @@ the schema from scratch (it drops and recreates the OLTP tables).
 The dev server runs this stack from a clone of this repo
 (`/home/ubuntu/dataworm`). On every push to `main` (or a manual run from the
 Actions tab), [`.github/workflows/sync-dags.yml`](.github/workflows/sync-dags.yml)
-SSHes into the server and runs `git pull --ff-only origin main` in that clone,
-so the server always tracks `main` — DAGs included, since the compose stack
+SSHes into the server and runs `git reset --hard origin/main` in that clone,
+so the server always mirrors `main` — DAGs included, since the compose stack
 bind-mounts `airflow/dags/` from the checkout.
 
-Don't commit or edit files directly in the server clone: the pull is
-fast-forward-only, so any local commits there will make deploys fail until
-they're removed.
+Don't commit or edit files directly in the server clone: every deploy hard
+resets to `origin/main`, so local commits and edits there are discarded.
 
 ### One-time setup
 

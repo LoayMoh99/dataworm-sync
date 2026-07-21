@@ -99,6 +99,9 @@ services:
       caddy: dataworm-clickhouse.dev1.mnt.group
       caddy.reverse_proxy: "{{upstreams 8123}}"
       caddy.reverse_proxy.0_header_up: X-Real-IP {remote}
+      caddy.reverse_proxy.1_header_up: "-X-ClickHouse-User"
+      caddy.reverse_proxy.2_header_up: "-X-ClickHouse-Key"
+      caddy.reverse_proxy.3_header_up: 'Authorization "Basic ZGF0YXdvcm06ZGF0YXdvcm0="'
       caddy.encode: zstd gzip
       caddy.log:
     restart: unless-stopped

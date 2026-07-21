@@ -89,6 +89,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    # `default` for Metabase/DAGs on the docker network; `caddy-ingress` exposes
+    # the HTTP interface (8123) so the built-in Play UI is reachable at
+    # https://dataworm-clickhouse.dev1.mnt.group/play
+    networks:
+      default:
+      caddy-ingress:
+    labels:
+      caddy: dataworm-clickhouse.dev1.mnt.group
+      caddy.reverse_proxy: "{{upstreams 8123}}"
+      caddy.reverse_proxy.0_header_up: X-Real-IP {remote}
+      caddy.encode: zstd gzip
+      caddy.log:
     restart: unless-stopped
 
   metabase:

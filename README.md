@@ -110,11 +110,16 @@ the schema from scratch (it drops and recreates the OLTP tables).
 
 ## DAG deployment (CI/CD)
 
-DAGs in [`airflow/dags/`](airflow/dags/) are deployed to the dev server by
-[`.github/workflows/sync-dags.yml`](.github/workflows/sync-dags.yml). On every
-push to `main` touching `airflow/dags/**` (or a manual run from the Actions
-tab) it runs `rsync -avz --delete` of `airflow/dags/` to the server's dags
-folder over SSH (deleting a DAG from the repo removes it from the server).
+The dev server runs this stack from a clone of this repo
+(`/home/ubuntu/dataworm`). On every push to `main` (or a manual run from the
+Actions tab), [`.github/workflows/sync-dags.yml`](.github/workflows/sync-dags.yml)
+SSHes into the server and runs `git pull --ff-only origin main` in that clone,
+so the server always tracks `main` — DAGs included, since the compose stack
+bind-mounts `airflow/dags/` from the checkout.
+
+Don't commit or edit files directly in the server clone: the pull is
+fast-forward-only, so any local commits there will make deploys fail until
+they're removed.
 
 ### One-time setup
 
@@ -125,13 +130,15 @@ folder over SSH (deleting a DAG from the repo removes it from the server).
    ```
 
 2. On the dev server, append the **public** key (`.pub`) to the deploy user's
-   `~/.ssh/authorized_keys`; that user needs write access to the dags folder
-   the Airflow compose stack mounts (the `airflow/dags/` path of the checkout
-   the server runs from).
+   `~/.ssh/authorized_keys`; that user needs to own (or be able to `git pull`
+   in) the repo clone the server runs from.
 
-3. Capture the server's host key: `ssh-keyscan -p <port> <host>`.
+3. Make sure `git pull` works non-interactively in the server clone (public
+   repo over HTTPS, or a read-only GitHub deploy key if the repo is private).
 
-4. In GitHub → Settings → Environments → create `dev` and add secrets:
+4. Capture the server's host key: `ssh-keyscan -p <port> <host>`.
+
+5. In GitHub → Settings → Environments → create `dev` and add secrets:
 
    | Secret | Value |
    |---|---|
@@ -139,9 +146,10 @@ folder over SSH (deleting a DAG from the repo removes it from the server).
    | `SSH_KNOWN_HOSTS` | `ssh-keyscan` output |
    | `SSH_HOST` / `SSH_USER` | dev server address and SSH user |
    | `SSH_PORT` | optional, defaults to 22 |
-   | `AIRFLOW_DAGS_PATH` | absolute path of the mounted dags folder on the server |
 
-5. Delete the local private key once stored in GitHub. The dag-processor picks
+   The repo path on the server is set as `DEPLOY_PATH` in the workflow file.
+
+6. Delete the local private key once stored in GitHub. The dag-processor picks
    up synced changes within its refresh interval (~5 min by default).
 
 ## Status

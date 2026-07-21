@@ -1,24 +1,24 @@
-name: Sync DAGs to Airflow (dev)
+name: Sync repo to dev server
 
 on:
   push:
     branches: [main]
-    paths:
-      - "airflow/dags/**"
   workflow_dispatch: {}
 
 concurrency:
   group: sync-dags-dev
   cancel-in-progress: true
 
+env:
+  # Path of the repo clone on the dev server (not secret, just configuration).
+  DEPLOY_PATH: /home/ubuntu/dataworm
+
 jobs:
   deploy:
-    name: Deploy to dev Airflow
+    name: Pull latest main on dev server
     runs-on: ubuntu-latest
     environment: dev
     steps:
-      - uses: actions/checkout@v4
-
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
@@ -27,11 +27,15 @@ jobs:
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Rsync airflow/dags/ to the server's dags folder
+      - name: git pull on the server
         run: |
-          rsync -avz --delete \
-            --exclude="__pycache__" \
-            --exclude="*.pyc" \
-            -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=yes" \
-            airflow/dags/ \
-            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.AIRFLOW_DAGS_PATH }}/"
+          ssh -i ~/.ssh/id_ed25519 \
+              -p ${{ secrets.SSH_PORT || 22 }} \
+              -o StrictHostKeyChecking=yes \
+              "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+              "set -e
+               cd '${DEPLOY_PATH}'
+               git fetch origin main
+               git checkout main
+               git pull --ff-only origin main
+               echo 'Now at:' && git log --oneline -1"

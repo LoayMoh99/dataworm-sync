@@ -16,7 +16,7 @@ dag = DAG(
     '01_load_all_dimensions',
     default_args=default_args,
     description='تعبئة ونقل كل جداول الأبعاد من Postgres إلى ClickHouse',
-    schedule_interval='@daily',
+    schedule='@daily',
     catchup=False
 )
 

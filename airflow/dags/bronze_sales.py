@@ -4,6 +4,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from plugins.utils.clickhouse import load_rows
 
 
 
@@ -35,6 +36,8 @@ def fetch_table(table_name):
 def extract_sales():
     rows = fetch_table("sale_order")
     print(f"Extracted {len(rows)} rows")
+    load_rows("sale_order", rows)
+    print(f"Loaded {len(rows)} rows into nour_bronze.sale_order")
 
 
 with DAG(

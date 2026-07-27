@@ -20,7 +20,7 @@ def extract_postgres_to_bronze(table_name):
     df = pd.read_sql(query, pg_engine)
     
     # 2. الاتصال بـ ClickHouse وكتابة البيانات في طبقة bronze
-    ch_client = clickhouse_connect.get_client(host='clickhouse', port=8123, username='default', password='')
+    ch_client = clickhouse_connect.get_client(host='clickhouse', port=8123, username='dataworm', password='dataworm')
     
     # إنشاء الجدول في bronze لو مش موجود
     ch_client.command(f"CREATE TABLE IF NOT EXISTS bronze.raw_{table_name} ENGINE = Log AS SELECT * FROM memory WHERE 1=0")

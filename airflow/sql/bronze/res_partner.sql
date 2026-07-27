@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS nour_bronze.res_partner
 (
     id UInt64,
     name String,
-    email String,
+    email String null,
     phone String,
     street String,
     city String,

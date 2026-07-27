@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS nour_bronze.res_partner
     city String null,
     city_id UInt32 null,
     muhafaza_id UInt32 null,
-    is_company Bool ,
+    is_company Bool,
     partner_type String null,
     segment String null,
     active Bool,

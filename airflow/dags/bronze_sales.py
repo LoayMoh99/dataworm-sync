@@ -4,15 +4,39 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 from postgres import fetch_table
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
+
+
+
+def get_postgres_connection():
+    return psycopg2.connect(
+        host="postgres",
+        port=5432,
+        database="warehouse",
+        user="dataworm",
+        password="12datawrom3",
+        cursor_factory=RealDictCursor,
+    )
+
+def fetch_table(table_name):
+    conn = get_postgres_connection()
+
+    cur = conn.cursor()
+
+    cur.execute(f"SELECT * FROM {table_name}")
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return rows
 
 def extract_sales():
     rows = fetch_table("sale_order")
-
-    print(f"Extracted {len(rows)} sale orders")
-
-    if rows:
-        print(rows[0])
+    print(f"Extracted {len(rows)} rows")
 
 
 with DAG(
@@ -20,7 +44,6 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
-    tags=["bronze", "sales"],
 ) as dag:
 
     extract_sales_task = PythonOperator(

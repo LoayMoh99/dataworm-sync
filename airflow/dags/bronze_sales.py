@@ -13,7 +13,7 @@ def get_clickhouse_client():
         host="clickhouse",
         port=8123,
         username="dataworm",
-        password="datawaorm",
+        password="dataworm",
         database="nour_bronze",
     )
 

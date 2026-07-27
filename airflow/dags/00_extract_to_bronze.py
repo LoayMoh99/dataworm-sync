@@ -45,7 +45,7 @@ def extract_postgres_to_bronze(table_name):
 with DAG(
     '00_extract_to_bronze',
     default_args=default_args,
-    schedule_interval='@daily',
+    schedule='@daily',
     catchup=False,
 ) as dag:
 

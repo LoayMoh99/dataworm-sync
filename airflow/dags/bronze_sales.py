@@ -14,7 +14,7 @@ def get_clickhouse_client():
         port=8123,
         username="dataworm",
         password="datawaorm",
-        database="warehouse",
+        database="nour_bronze",
     )
 
 def execute_sql_file(sql_file_path: str):

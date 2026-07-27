@@ -17,7 +17,7 @@ default_args = {
 def extract_postgres_to_bronze(table_name):
     # 1. الاتصال بـ Postgres وسحب البيانات
     pg_engine = create_engine(
-        'postgresql://readonly_user:000@host.docker.internal:5432/warehouse'
+        'postgresql://readonly_user:000@postgres:5432/warehouse'
     )
     query = f'SELECT * FROM {table_name}'
     df = pd.read_sql(query, pg_engine)

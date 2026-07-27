@@ -1,46 +1,56 @@
+from datetime import datetime, timedelta
+import clickhouse_connect
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from datetime import datetime, timedelta
 import pandas as pd
 from sqlalchemy import create_engine
-import clickhouse_connect
 
 default_args = {
-    'owner': 'airflow',
+    'owner': 'dataworm',
     'depends_on_past': False,
     'start_date': datetime(2026, 1, 1),
     'retries': 1,
     'retry_delay': timedelta(minutes=5),
 }
 
-# 1. الاتصال بـ Postgres وسحب البيانات الخام
+
 def extract_postgres_to_bronze(table_name):
-    pg_engine = create_engine('postgresql://readonly_user:000@postgres:5432/warehouse')
-    query = f"SELECT * FROM res_partner"
+    # 1. الاتصال بـ Postgres وسحب البيانات
+    pg_engine = create_engine(
+        'postgresql://readonly_user:000@host.docker.internal:5432/warehouse'
+    )
+    query = f'SELECT * FROM {table_name}'
     df = pd.read_sql(query, pg_engine)
-    
-    # 2. الاتصال بـ ClickHouse وكتابة البيانات في طبقة bronze
-    ch_client = clickhouse_connect.get_client(host='clickhouse', port=8123, username='dataworm', password='dataworm')
-    
-    # إنشاء الجدول في bronze لو مش موجود
-    ch_client.command(f"CREATE TABLE IF NOT EXISTS bronze.raw_{table_name} ENGINE = Log AS SELECT * FROM memory WHERE 1=0")
-    
-    # إدراج البيانات
-    ch_client.insert_df(f"bronze.raw_{table_name}", df)
-    print(f"Successfully loaded {len(df)} rows into bronze.raw_{table_name}")
+
+    # 2. الاتصال بـ ClickHouse باستخدام بيانات الاعتماد الصحيحة
+    ch_client = clickhouse_connect.get_client(
+        host='clickhouse',
+        port=8123,
+        username='dataworm',
+        password='dataworm',
+    )
+
+    # 3. إنشاء قاعدة بيانات bronze لو مش موجودة
+    ch_client.command('CREATE DATABASE IF NOT EXISTS bronze')
+
+    # 4. إدخال البيانات في ClickHouse مباشرة
+    # ملاحظة: insert_df بتكفّل بإنشاء الجدول أو الإدخال بشكل أوتوماتيكي وصحيح
+    ch_client.insert_df(
+        table=f'raw_{table_name}',
+        df=df,
+        database='bronze',
+    )
+
 
 with DAG(
     '00_extract_to_bronze',
     default_args=default_args,
-    description='Extract raw data from Postgres to ClickHouse Bronze layer',
-    schedule='@daily',
+    schedule_interval='@daily',
     catchup=False,
 ) as dag:
 
-    extract_res_partner = PythonOperator(
-        task_id='extract_res_partner_to_bronze',
+    task_extract_res_partner = PythonOperator(
+        task_id='extract_res_partner',
         python_callable=extract_postgres_to_bronze,
         op_kwargs={'table_name': 'res_partner'},
     )
-
-    extract_res_partner

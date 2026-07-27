@@ -2,8 +2,6 @@ from datetime import datetime
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-
-from postgres import fetch_table
 import psycopg2
 from psycopg2.extras import RealDictCursor
 

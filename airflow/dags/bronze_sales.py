@@ -18,6 +18,7 @@ def get_clickhouse_client():
     )
 
 def execute_sql_file(sql_file_path: str):
+    
     client = get_clickhouse_client()
 
     sql = Path(sql_file_path).read_text(encoding="utf-8")

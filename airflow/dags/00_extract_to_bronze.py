@@ -16,6 +16,7 @@ default_args = {
 # 1. الاتصال بـ Postgres وسحب البيانات الخام
 def extract_postgres_to_bronze(table_name):
     pg_engine = create_engine('postgresql://readonly_user:000@postgres:5432/warehouse')
+    query = f"SELECT * FROM res_partner"
     df = pd.read_sql(query, pg_engine)
     
     # 2. الاتصال بـ ClickHouse وكتابة البيانات في طبقة bronze

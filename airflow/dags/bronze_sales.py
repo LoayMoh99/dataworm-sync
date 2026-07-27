@@ -4,7 +4,6 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from plugins.utils.clickhouse import load_rows
 from clickhouse_connect import get_client
 from pathlib import Path
 

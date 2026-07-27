@@ -16,11 +16,10 @@ default_args = {
 # 1. الاتصال بـ Postgres وسحب البيانات الخام
 def extract_postgres_to_bronze(table_name):
     pg_engine = create_engine('postgresql://readonly_user:000@postgres:5432/warehouse')
-    query = f"SELECT * FROM {table_name}"
     df = pd.read_sql(query, pg_engine)
     
     # 2. الاتصال بـ ClickHouse وكتابة البيانات في طبقة bronze
-    ch_client = clickhouse_connect.get_client(host='clickhouse', port=8123, username='dataworm', password='dataworm')
+    ch_client = clickhouse_connect.get_client(host='clickhouse', port=8123, username='default', password='')
     
     # إنشاء الجدول في bronze لو مش موجود
     ch_client.command(f"CREATE TABLE IF NOT EXISTS bronze.raw_{table_name} ENGINE = Log AS SELECT * FROM memory WHERE 1=0")
@@ -37,11 +36,10 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # يمكنك إضافة بقية الجداول التي تريد سحبها هنا
-    extract_customers = PythonOperator(
-        task_id='extract_customers_to_bronze',
+    extract_res_partner = PythonOperator(
+        task_id='extract_res_partner_to_bronze',
         python_callable=extract_postgres_to_bronze,
-        op_kwargs={'table_name': 'customers'},
+        op_kwargs={'table_name': 'res_partner'},
     )
 
-    extract_customers
+    extract_res_partner

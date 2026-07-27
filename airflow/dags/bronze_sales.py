@@ -1,12 +1,31 @@
 from datetime import datetime
-
+import os
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from clickhouse_connect import get_client
-from pathlib import Path
 
+SQL_BRONZE_DIR = "/opt/airflow/sql/bronze"
+
+TABLES = [
+    "sale_order",
+    "sale_order_line",
+    "res_partner",
+    "product_product",
+    "product_template",
+    "product_category",
+    "stock_location",
+    "cities",
+    "muhafazat",
+]
+def create_table(table_name: str):
+    path = os.path.join(SQL_BRONZE_DIR, f"{table_name}.sql")
+    with open(path, "r") as f:
+        ddl = f.read()
+    client = get_clickhouse_client()
+    client.command(ddl)
+    print(f"Ensured table exists: nour_bronze.{table_name}")
 
 def get_clickhouse_client():
     return get_client(
@@ -17,13 +36,7 @@ def get_clickhouse_client():
         database="nour_bronze",
     )
 
-def execute_sql_file(sql_file_path: str):
-    
-    client = get_clickhouse_client()
 
-    sql = Path(sql_file_path).read_text(encoding="utf-8")
-
-    client.command(sql)
 
 
 
@@ -63,11 +76,14 @@ def fetch_table(table_name):
 
     return rows
 
-def extract_sales():
-    rows = fetch_table("sale_order")
-    print(f"Extracted {len(rows)} rows")
-    load_rows("sale_order", rows)
-    print(f"Loaded {len(rows)} rows into nour_bronze.sale_order")
+
+
+def create_and_load(table_name: str):
+    create_table(table_name)
+    rows = fetch_table(table_name)
+    print(f"Extracted {len(rows)} rows from {table_name}")
+    load_rows(table_name, rows)
+    print(f"Loaded {len(rows)} rows into nour_bronze.{table_name}")
 
 
 with DAG(
@@ -77,7 +93,13 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    extract_sales_task = PythonOperator(
-        task_id="extract_sales",
-        python_callable=extract_sales,
-    )
+    previous_task = None
+    for table in TABLES:
+        task = PythonOperator(
+            task_id=f"load_{table}",
+            python_callable=create_and_load,
+            op_kwargs={"table_name": table},
+        )
+        if previous_task:
+            previous_task >> task
+        previous_task = task

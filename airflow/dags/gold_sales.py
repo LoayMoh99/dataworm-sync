@@ -50,7 +50,7 @@ def generate_dim_date():
     print(f"Loaded {len(rows)} rows into nour_gold.dim_date")
 
 def build_dim_date():
-    run_sql_file("/dim_date")
+    run_sql_file("dim_date")
     generate_dim_date()
     print("Built dim_date")
 

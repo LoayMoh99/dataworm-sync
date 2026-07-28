@@ -32,6 +32,15 @@ def build_silver_locations():
     run_sql_file("transform_locations")
     print("Built silver.locations")
 
+def build_silver_products():
+    run_sql_file("products")
+    run_sql_file("transform_products")
+    print("Built silver.products")
+
+def build_silver_sales():
+    run_sql_file("sales")
+    run_sql_file("transform_sales")
+    print("Built silver.sales")
 
 with DAG(
     dag_id="silver_sales",
@@ -48,6 +57,16 @@ with DAG(
     build_locations_task = PythonOperator(
     task_id="build_silver_locations",
     python_callable=build_silver_locations,
-)
+    )
+    build_products_task = PythonOperator(
+    task_id="build_silver_products",
+    python_callable=build_silver_products,
+    )
 
-build_customers_task >> build_locations_task
+    build_sales_task = PythonOperator(
+    task_id="build_silver_sales",
+    python_callable=build_silver_sales,
+    )
+
+build_customers_task >> build_locations_task >> build_products_task >> build_sales_task
+

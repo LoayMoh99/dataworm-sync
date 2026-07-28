@@ -55,8 +55,8 @@ def build_dim_date():
     print("Built dim_date")
 
 def build_fact_sales():
-    run_sql_file("facts/fact_sales")
-    run_sql_file("facts/transform_fact_sales")
+    run_sql_file("fact_sales")
+    run_sql_file("transform_fact_sales")
     print("Built FactSales")
 
 with DAG(

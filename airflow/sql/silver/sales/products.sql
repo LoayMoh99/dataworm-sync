@@ -9,8 +9,11 @@ CREATE TABLE IF NOT EXISTS nour_silver.products
     category_name String,
     list_price Decimal(12,2),
     standard_price Decimal(12,2),
-    product_type string,
-    active Bool,
+    product_type String,
+    active Bool
+)
+ENGINE = MergeTree
+ORDER BY product_id;
 )
 ENGINE = MergeTree
 ORDER BY product_id;

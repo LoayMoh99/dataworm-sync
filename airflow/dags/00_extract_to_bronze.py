@@ -15,12 +15,14 @@ default_args = {
 
 
 def extract_postgres_to_bronze(table_name):
+    # 1. قراءة البيانات من PostgreSQL
     pg_engine = create_engine(
         'postgresql://readonly_user:000@postgres:5432/warehouse'
     )
     query = f'SELECT * FROM {table_name}'
     df = pd.read_sql(query, pg_engine)
 
+    # 2. الاتصال بـ ClickHouse
     ch_client = clickhouse_connect.get_client(
         host='clickhouse',
         port=8123,
@@ -28,12 +30,46 @@ def extract_postgres_to_bronze(table_name):
         password='dataworm',
     )
 
-    ch_client.command('CREATE DATABASE IF NOT EXISTS bronze')
+    db_name = 'salah_bronze'
+    target_table = f'raw_{table_name}'
 
+    # إنشاء قاعدة البيانات لو مش موجودة
+    ch_client.command(f'CREATE DATABASE IF NOT EXISTS {db_name}')
+
+    # 3. بناء الأنواع بشكل دقيق لحل مشكلة الـ bool والـ String
+    columns_with_types = []
+    for col, dtype in df.dtypes.items():
+        dtype_str = str(dtype).lower()
+        if 'bool' in dtype_str:
+            ch_type = 'Nullable(Bool)'
+        elif 'int' in dtype_str:
+            ch_type = 'Nullable(Int64)'
+        elif 'float' in dtype_str:
+            ch_type = 'Nullable(Float64)'
+        elif 'datetime' in dtype_str:
+            ch_type = 'Nullable(DateTime64(3))'
+        else:
+            ch_type = 'Nullable(String)'
+
+        columns_with_types.append(f'`{col}` {ch_type}')
+
+    # مسح الجدول القديم اللي كاريته بأنواع غلط عشان ما يعترضش
+    ch_client.command(f'DROP TABLE IF EXISTS {db_name}.{target_table}')
+
+    # إنشاء الجدول بالأنواع الصحيحة
+    create_table_query = f"""
+    CREATE TABLE IF NOT EXISTS {db_name}.{target_table} (
+        {', '.join(columns_with_types)}
+    ) ENGINE = MergeTree() ORDER BY tuple();
+    """
+
+    ch_client.command(create_table_query)
+
+    # 4. إدخال البيانات في الجدول الجاهز
     ch_client.insert_df(
-        table=f'raw_{table_name}',
+        table=target_table,
         df=df,
-        database='salah_bronze',
+        database=db_name
     )
 
 

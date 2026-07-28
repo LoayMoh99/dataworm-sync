@@ -30,21 +30,13 @@ def extract_postgres_to_bronze(table_name):
         password='dataworm',
     )
 
-    # 3. إنشاء قاعدة البيانات لو مش موجودة
+    # 3. إنشاء قاعدة البيانات
     ch_client.command('CREATE DATABASE IF NOT EXISTS bronze')
 
     target_table = f'raw_{table_name}'
 
-    # 4. إنشاء الجدول أوتوماتيكياً بناءً على الـ DataFrame الممرر
-    ch_client.create_table(
-        table=target_table,
-        database='bronze',
-        df=df,
-        engine='MergeTree',
-        order_by='tuple()'  # ClickHouse يتطلب order_by للمحرك MergeTree
-    )
-
-    # 5. إدخال البيانات
+    # 4. تحويل أنواع Pandas لدوال ClickHouse وإنشاء الجدول بـ SQL مباشر
+    # insert_df ستقوم بإنشاء الجدول تلقائياً أو إدخال البيانات إذا كان الجدول غير موجود بشرط عدم وجود settings خاطئة
     ch_client.insert_df(
         table=target_table,
         df=df,

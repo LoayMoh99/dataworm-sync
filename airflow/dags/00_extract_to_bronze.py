@@ -36,27 +36,36 @@ def extract_postgres_to_bronze(table_name):
     # إنشاء قاعدة البيانات لو مش موجودة
     ch_client.command(f'CREATE DATABASE IF NOT EXISTS {db_name}')
 
-    # 3. بناء واستعلام إنشاء الجدول تلقائيًا
+    # 3. بناء الأنواع بشكل دقيق لحل مشكلة الـ bool والـ String
     columns_with_types = []
     for col, dtype in df.dtypes.items():
-        ch_type = 'Nullable(String)'
-        if 'int' in str(dtype):
+        dtype_str = str(dtype).lower()
+        if 'bool' in dtype_str:
+            ch_type = 'Nullable(Bool)'
+        elif 'int' in dtype_str:
             ch_type = 'Nullable(Int64)'
-        elif 'float' in str(dtype):
+        elif 'float' in dtype_str:
             ch_type = 'Nullable(Float64)'
-        elif 'datetime' in str(dtype):
+        elif 'datetime' in dtype_str:
             ch_type = 'Nullable(DateTime64(3))'
+        else:
+            ch_type = 'Nullable(String)'
+
         columns_with_types.append(f'`{col}` {ch_type}')
 
+    # مسح الجدول القديم اللي كاريته بأنواع غلط عشان ما يعترضش
+    ch_client.command(f'DROP TABLE IF EXISTS {db_name}.{target_table}')
+
+    # إنشاء الجدول بالأنواع الصحيحة
     create_table_query = f"""
     CREATE TABLE IF NOT EXISTS {db_name}.{target_table} (
         {', '.join(columns_with_types)}
     ) ENGINE = MergeTree() ORDER BY tuple();
     """
-    
+
     ch_client.command(create_table_query)
 
-    # 4. إدخال البيانات (بدون أي arguments زيادة)
+    # 4. إدخال البيانات في الجدول الجاهز
     ch_client.insert_df(
         table=target_table,
         df=df,

@@ -54,6 +54,10 @@ def build_dim_date():
     generate_dim_date()
     print("Built dim_date")
 
+def build_fact_sales():
+    run_sql_file("facts/fact_sales")
+    run_sql_file("facts/transform_fact_sales")
+    print("Built FactSales")
 
 with DAG(
     dag_id="gold_sales",
@@ -66,3 +70,10 @@ with DAG(
         task_id="build_dim_date",
         python_callable=build_dim_date,
     )
+
+    build_fact_sales_task = PythonOperator(
+    task_id="build_fact_sales",
+    python_callable=build_fact_sales,
+    )
+
+build_dim_date_task >> build_fact_sales_task

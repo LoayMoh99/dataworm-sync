@@ -5,7 +5,6 @@ from airflow.operators.python import PythonOperator
 import pandas as pd
 from sqlalchemy import create_engine
 
-# 1. الإعدادات الافتراضية للـ DAG
 default_args = {
     'owner': 'dataworm',
     'depends_on_past': False,
@@ -15,16 +14,15 @@ default_args = {
 }
 
 
-# 2. الدالة الأساسية لاستخراج البيانات ونقلها لـ ClickHouse
 def extract_postgres_to_bronze(table_name):
-    # الاتصال بقاعدة بيانات postgres وقراءة الجدول
+    # 1. قراءة البيانات من PostgreSQL
     pg_engine = create_engine(
         'postgresql://readonly_user:000@postgres:5432/warehouse'
     )
     query = f'SELECT * FROM {table_name}'
     df = pd.read_sql(query, pg_engine)
 
-    # الاتصال بـ ClickHouse
+    # 2. الاتصال بـ ClickHouse
     ch_client = clickhouse_connect.get_client(
         host='clickhouse',
         port=8123,
@@ -35,19 +33,37 @@ def extract_postgres_to_bronze(table_name):
     db_name = 'salah_bronze'
     target_table = f'raw_{table_name}'
 
-    # التأكد من وجود داتابيز salah_bronze
+    # إنشاء قاعدة البيانات لو مش موجودة
     ch_client.command(f'CREATE DATABASE IF NOT EXISTS {db_name}')
 
-    # إدخال البيانات في الجدول المجهز
+    # 3. بناء واستعلام إنشاء الجدول تلقائيًا
+    columns_with_types = []
+    for col, dtype in df.dtypes.items():
+        ch_type = 'Nullable(String)'
+        if 'int' in str(dtype):
+            ch_type = 'Nullable(Int64)'
+        elif 'float' in str(dtype):
+            ch_type = 'Nullable(Float64)'
+        elif 'datetime' in str(dtype):
+            ch_type = 'Nullable(DateTime64(3))'
+        columns_with_types.append(f'`{col}` {ch_type}')
+
+    create_table_query = f"""
+    CREATE TABLE IF NOT EXISTS {db_name}.{target_table} (
+        {', '.join(columns_with_types)}
+    ) ENGINE = MergeTree() ORDER BY tuple();
+    """
+    
+    ch_client.command(create_table_query)
+
+    # 4. إدخال البيانات (بدون أي arguments زيادة)
     ch_client.insert_df(
         table=target_table,
         df=df,
-        database=db_name,
-        create_table_params={'engine': 'MergeTree() ORDER BY tuple()'}
+        database=db_name
     )
 
 
-# 3. تعريف الـ DAG
 with DAG(
     '00_extract_to_bronze',
     default_args=default_args,

@@ -27,6 +27,11 @@ def build_silver_customers():
     run_sql_file("transform_customers")  # populate it
     print("Built silver.customers")
 
+def build_silver_locations():
+    run_sql_file("locations")
+    run_sql_file("transform_locations")
+    print("Built silver.locations")
+
 
 with DAG(
     dag_id="silver_sales",
@@ -39,3 +44,10 @@ with DAG(
         task_id="build_silver_customers",
         python_callable=build_silver_customers,
     )
+
+    build_locations_task = PythonOperator(
+    task_id="build_silver_locations",
+    python_callable=build_silver_locations,
+)
+
+build_customers_task >> build_locations_task

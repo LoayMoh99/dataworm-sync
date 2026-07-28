@@ -4,7 +4,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from clickhouse_connect import get_client
 
-SQL_SILVER_DIR = "/opt/airflow/sql/sales/silver"
+SQL_SILVER_DIR = "/opt/airflow/sql/silver/sales"
 
 def get_clickhouse_client(database="nour_silver"):
     return get_client(
@@ -12,7 +12,7 @@ def get_clickhouse_client(database="nour_silver"):
         port=8123,
         username="dataworm",
         password="dataworm",
-        database="nour_silver",
+        database=database,
     )
 
 def run_sql_file(file_name: str):

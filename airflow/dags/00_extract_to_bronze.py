@@ -33,7 +33,7 @@ def extract_postgres_to_bronze(table_name):
     ch_client.insert_df(
         table=f'raw_{table_name}',
         df=df,
-        database='bronze',
+        database='salah_bronze',
     )
 
 

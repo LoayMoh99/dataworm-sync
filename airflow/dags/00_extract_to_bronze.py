@@ -42,7 +42,7 @@ def extract_postgres_to_bronze(table_name):
     ch_client.insert_df(
         table=target_table,
         df=df,
-        database=db_name
+        database=db_name,
         create_table_params={'engine': 'MergeTree() ORDER BY tuple()'}
     )
 

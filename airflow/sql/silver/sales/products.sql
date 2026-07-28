@@ -14,6 +14,3 @@ CREATE TABLE IF NOT EXISTS nour_silver.products
 )
 ENGINE = MergeTree
 ORDER BY product_id;
-)
-ENGINE = MergeTree
-ORDER BY product_id;

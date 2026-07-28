@@ -30,11 +30,16 @@ def extract_postgres_to_bronze(table_name):
 
     ch_client.command('CREATE DATABASE IF NOT EXISTS bronze')
 
+    ch_client.create_table_from_dataframe(
+        df=df,
+        table=f'raw_{table_name}',
+        database='bronze'
+    )
+
     ch_client.insert_df(
         table=f'raw_{table_name}',
         df=df,
-        database='bronze',
-        settings={'create_table_if_not_exists': 1}
+        database='bronze'
     )
 
 

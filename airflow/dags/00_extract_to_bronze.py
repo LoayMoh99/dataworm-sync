@@ -1,87 +1,125 @@
 from datetime import datetime, timedelta
-import clickhouse_connect
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 import pandas as pd
 from sqlalchemy import create_engine
+import clickhouse_connect
 
+# --------------------------------------------------
+# 1. Connection Configurations
+# --------------------------------------------------
+POSTGRES_URI = 'postgresql://readonly_user:000@postgres:5432/warehouse'
+
+CLICKHOUSE_HOST = 'clickhouse'
+CLICKHOUSE_PORT = 8123
+CLICKHOUSE_USER = 'dataworm'
+CLICKHOUSE_PASSWORD = 'dataworm'
+CLICKHOUSE_DB = 'salah_bronze'
+
+# قائمة الجداول اللي محتاج تنقلها كـ Raw Data
+TABLES_TO_EXTRACT = [
+    'res_partner',
+    'sale_order',
+    'sale_order_line',
+    'product_product',
+    'product_template',
+    'product_category',
+    'stock_location',
+    'cities',
+    'muhafazat',
+    # ضيف أي أسامي جداول تانية تحبها هنا
+]
+
+# --------------------------------------------------
+# 2. Schema Mapping & Ingestion Function
+# --------------------------------------------------
+def map_pandas_to_clickhouse(dtype):
+    """تحويل أنواع بيانات Pandas إلى ClickHouse"""
+    dtype_str = str(dtype)
+    if 'int' in dtype_str:
+        return 'Nullable(Int64)'
+    elif 'float' in dtype_str:
+        return 'Nullable(Float64)'
+    elif 'datetime' in dtype_str:
+        return 'Nullable(DateTime64(3))'
+    elif 'bool' in dtype_str:
+        return 'Nullable(Bool)'
+    else:
+        return 'Nullable(String)'
+
+def extract_and_load_table(table_name):
+    print(f"--- Starting Pipeline for Table: {table_name} ---")
+    
+    # أ. السحب من PostgreSQL
+    pg_engine = create_engine(POSTGRES_URI)
+    query = f"SELECT * FROM {table_name};"
+    df = pd.read_sql(query, pg_engine)
+    print(f"Fetched {len(df)} rows from PostgreSQL table: {table_name}")
+
+    # ب. إنشاء الـ Schema تلقائياً
+    columns_schema = []
+    for col_name, dtype in df.dtypes.items():
+        ch_type = map_pandas_to_clickhouse(dtype)
+        columns_schema.append(f"`{col_name}` {ch_type}")
+    
+    schema_sql = ",\n  ".join(columns_schema)
+    target_table = f"raw_{table_name}"
+    
+    create_table_query = f"""
+    CREATE TABLE IF NOT EXISTS {CLICKHOUSE_DB}.{target_table} (
+      {schema_sql}
+    ) ENGINE = MergeTree()
+    ORDER BY tuple();
+    """
+
+    # ج. الاتصال بـ ClickHouse والمسح والتكريت ثم الإدخال
+    ch_client = clickhouse_connect.get_client(
+        host=CLICKHOUSE_HOST,
+        port=CLICKHOUSE_PORT,
+        username=CLICKHOUSE_USER,
+        password=CLICKHOUSE_PASSWORD
+    )
+    
+    # 1. مسح الجدول القديم
+    ch_client.command(f"DROP TABLE IF EXISTS {CLICKHOUSE_DB}.{target_table}")
+    
+    # 2. إنشاء الجدول الجديد
+    ch_client.command(create_table_query)
+    print(f"Created table {CLICKHOUSE_DB}.{target_table}")
+    
+    # 3. إدخال البيانات
+    if not df.empty:
+        ch_client.insert_df(
+            table=target_table,
+            df=df,
+            database=CLICKHOUSE_DB
+        )
+        print(f"Successfully inserted {len(df)} rows into {CLICKHOUSE_DB}.{target_table}")
+    else:
+        print("DataFrame is empty, skipped insertion.")
+
+# --------------------------------------------------
+# 3. Airflow DAG Definition
+# --------------------------------------------------
 default_args = {
-    'owner': 'dataworm',
-    'depends_on_past': False,
+    'owner': 'salah',
     'start_date': datetime(2026, 1, 1),
     'retries': 1,
     'retry_delay': timedelta(minutes=5),
 }
 
-
-def extract_postgres_to_bronze(table_name):
-    # 1. قراءة البيانات من PostgreSQL
-    pg_engine = create_engine(
-        'postgresql://readonly_user:000@postgres:5432/warehouse'
-    )
-    query = f'SELECT * FROM {table_name}'
-    df = pd.read_sql(query, pg_engine)
-
-    # 2. الاتصال بـ ClickHouse
-    ch_client = clickhouse_connect.get_client(
-        host='clickhouse',
-        port=8123,
-        username='dataworm',
-        password='dataworm',
-    )
-
-    db_name = 'salah_bronze'
-    target_table = f'raw_{table_name}'
-
-    # إنشاء قاعدة البيانات لو مش موجودة
-    ch_client.command(f'CREATE DATABASE IF NOT EXISTS {db_name}')
-
-    # 3. بناء الأنواع بشكل دقيق لحل مشكلة الـ bool والـ String
-    columns_with_types = []
-    for col, dtype in df.dtypes.items():
-        dtype_str = str(dtype).lower()
-        if 'bool' in dtype_str:
-            ch_type = 'Nullable(Bool)'
-        elif 'int' in dtype_str:
-            ch_type = 'Nullable(Int64)'
-        elif 'float' in dtype_str:
-            ch_type = 'Nullable(Float64)'
-        elif 'datetime' in dtype_str:
-            ch_type = 'Nullable(DateTime64(3))'
-        else:
-            ch_type = 'Nullable(String)'
-
-        columns_with_types.append(f'`{col}` {ch_type}')
-
-    # مسح الجدول القديم اللي كاريته بأنواع غلط عشان ما يعترضش
-    ch_client.command(f'DROP TABLE IF EXISTS {db_name}.{target_table}')
-
-    # إنشاء الجدول بالأنواع الصحيحة
-    create_table_query = f"""
-    CREATE TABLE IF NOT EXISTS {db_name}.{target_table} (
-        {', '.join(columns_with_types)}
-    ) ENGINE = MergeTree() ORDER BY tuple();
-    """
-
-    ch_client.command(create_table_query)
-
-    # 4. إدخال البيانات في الجدول الجاهز
-    ch_client.insert_df(
-        table=target_table,
-        df=df,
-        database=db_name
-    )
-
-
 with DAG(
-    '00_extract_to_bronze',
+    dag_id='postgres_to_clickhouse_bronze_all_tables',
     default_args=default_args,
-    schedule='@daily',
+    schedule_interval='@daily',
     catchup=False,
+    tags=['bronze', 'ingestion', 'postgres', 'clickhouse']
 ) as dag:
 
-    task_extract_res_partner = PythonOperator(
-        task_id='extract_res_partner',
-        python_callable=extract_postgres_to_bronze,
-        op_kwargs={'table_name': 'res_partner'},
-    )
+    # عمل Loop ينشئ Task مستقل لكل جدول في القائمة
+    for table in TABLES_TO_EXTRACT:
+        task = PythonOperator(
+            task_id=f'ingest_{table}',
+            python_callable=extract_and_load_table,
+            op_kwargs={'table_name': table}
+        )

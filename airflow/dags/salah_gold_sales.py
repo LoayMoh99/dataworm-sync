@@ -109,7 +109,7 @@ with DAG(
     '01_salah_bronze_to_gold',
     default_args=default_args,
     description='Full Star Schema Gold Layer for Sales and Master Data',
-    schedule_interval='@daily',
+    schedule='@daily',
     start_date=datetime(2026, 7, 1),
     catchup=False,
     tags=['gold', 'star_schema', 'clickhouse'],

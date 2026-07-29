@@ -15,12 +15,14 @@ def get_clickhouse_client(database="nour_gold"):
         database=database,
     )
 
-def run_sql_file(relative_path: str):
-    path = os.path.join(SQL_GOLD_DIR, f"{relative_path}.sql")
+def run_sql_file(file_name: str):
+    path = os.path.join(SQL_GOLD_DIR, f"{file_name}.sql")
     with open(path, "r") as f:
         sql = f.read()
     client = get_clickhouse_client()
-    client.command(sql)
+    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    for statement in statements:
+        client.command(statement)
 
 def generate_dim_date():
     start = date(2023, 1, 1)

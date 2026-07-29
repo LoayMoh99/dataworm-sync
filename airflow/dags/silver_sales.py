@@ -20,7 +20,9 @@ def run_sql_file(file_name: str):
     with open(path, "r") as f:
         sql = f.read()
     client = get_clickhouse_client()
-    client.command(sql)
+    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    for statement in statements:
+        client.command(statement)
 
 def build_silver_customers():
     run_sql_file("customers")            # create table

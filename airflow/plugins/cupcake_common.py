@@ -11,6 +11,7 @@ Layers:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 import psycopg2
@@ -75,11 +76,14 @@ def gold_asset(table: str) -> Asset:
 def run_ch_script(sql_text: str, database: str | None = None) -> None:
     """Execute a ``;``-separated batch of ClickHouse statements in order.
 
-    The cupcake SQL files contain only DDL / TRUNCATE / INSERT..SELECT with no
-    string literals containing ``;``, so a naive split is safe here.
+    ``--`` line comments are stripped first, so a semicolon inside a comment
+    can't split a statement (which would leave a comment-only fragment that
+    ClickHouse rejects as an empty query). The cupcake SQL files use no ``--``
+    inside string literals, so this is safe.
     """
     client = get_ch_client(database)
-    for stmt in sql_text.split(";"):
+    cleaned = re.sub(r"--[^\n]*", "", sql_text)
+    for stmt in cleaned.split(";"):
         stmt = stmt.strip()
         if stmt:
             client.command(stmt)

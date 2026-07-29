@@ -4,8 +4,14 @@ from airflow.operators.python import PythonOperator
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../plugins')))
-from utils.clickhouse import execute_query
+# إضافة فولدر الـ plugins للـ sys.path لضمان الـ Imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../plugins')))
+
+# استدعاء ملف الـ utils المخصص للـ ClickHouse
+try:
+    from utils import clickhouse
+except ImportError:
+    import utils.clickhouse as clickhouse
 
 default_args = {
     'owner': 'salah',
@@ -16,9 +22,15 @@ default_args = {
 }
 
 def create_gold_star_schema():
-    execute_query("CREATE DATABASE IF NOT EXISTS salah_gold;")
+    # التأكد من اسم الدالة المستدعاة من ملف clickhouse
+    query_runner = getattr(clickhouse, 'execute_query', getattr(clickhouse, 'execute_clickhouse_query', None))
+    
+    if not query_runner:
+        raise AttributeError("لم يتم العثور على دالة تنفيذ الاستعلامات داخل utils.clickhouse")
 
-    execute_query("""
+    query_runner("CREATE DATABASE IF NOT EXISTS salah_gold;")
+
+    query_runner("""
         CREATE TABLE IF NOT EXISTS salah_gold.dim_customers
         ENGINE = ReplacingMergeTree()
         ORDER BY customer_id AS
@@ -34,7 +46,7 @@ def create_gold_star_schema():
         LEFT JOIN salah_bronze.raw_muhafazat m ON c.muhafazat_id = m.id;
     """)
 
-    execute_query("""
+    query_runner("""
         CREATE TABLE IF NOT EXISTS salah_gold.dim_products
         ENGINE = ReplacingMergeTree()
         ORDER BY product_id AS
@@ -49,7 +61,7 @@ def create_gold_star_schema():
         LEFT JOIN salah_bronze.raw_product_category c ON t.categ_id = c.id;
     """)
 
-    execute_query("""
+    query_runner("""
         CREATE TABLE IF NOT EXISTS salah_gold.dim_locations
         ENGINE = ReplacingMergeTree()
         ORDER BY location_id AS
@@ -61,7 +73,7 @@ def create_gold_star_schema():
         FROM salah_bronze.raw_stock_location;
     """)
 
-    execute_query("""
+    query_runner("""
         CREATE TABLE IF NOT EXISTS salah_gold.fact_sales
         ENGINE = MergeTree()
         ORDER BY (order_id, line_id)

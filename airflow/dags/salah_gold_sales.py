@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from clickhouse_connect import get_client
 import sys
 import os
 
@@ -12,6 +13,18 @@ if plugins_folder not in sys.path:
 # استدعاء ملف الـ utils المباشر
 import utils.clickhouse as ch_utils
 
+
+
+def get_clickhouse_client(database="salah_gold"):
+    return get_client(
+        host="clickhouse",
+        port=8123,
+        username="dataworm",
+        password="dataworm",
+        database=database,
+    )
+    
+    
 default_args = {
     'owner': 'salah',
     'depends_on_past': False,
@@ -39,7 +52,8 @@ def create_gold_star_schema():
     if not query_runner:
         raise AttributeError("لم يتم العثور على أي دالة تنفيذ داخل utils/clickhouse.py")
 
-    query_runner("CREATE DATABASE IF NOT EXISTS salah_gold;")
+    client = get_clickhouse_client()
+    client.execute("CREATE DATABASE IF NOT EXISTS salah_gold;")
 
     query_runner("""
         CREATE TABLE IF NOT EXISTS salah_gold.dim_customers

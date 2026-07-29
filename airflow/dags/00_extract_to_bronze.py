@@ -111,7 +111,7 @@ default_args = {
 with DAG(
     dag_id='postgres_to_clickhouse_bronze_all_tables',
     default_args=default_args,
-    schedule_interval='@daily',
+    schedule='@daily',
     catchup=False,
     tags=['bronze', 'ingestion', 'postgres', 'clickhouse']
 ) as dag:

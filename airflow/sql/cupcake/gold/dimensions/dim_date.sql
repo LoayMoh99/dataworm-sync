@@ -26,8 +26,8 @@ SELECT
     toQuarter(d)                  AS quarter,
     toYear(d)                     AS year,
     toDayOfWeek(d)                AS day_of_week,
-    formatDateTime(d, '%A')       AS day_name,
-    formatDateTime(d, '%B')       AS month_name,
+    formatDateTime(d, '%W')       AS day_name,
+    formatDateTime(d, '%M')       AS month_name,
     toDayOfWeek(d) IN (5, 6)      AS is_weekend
 FROM (
     SELECT toDate('2015-01-01') + number AS d

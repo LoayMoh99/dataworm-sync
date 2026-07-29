@@ -80,6 +80,8 @@ def fetch_table(table_name):
 
 def create_and_load(table_name: str):
     create_table(table_name)
+    client = get_clickhouse_client()
+    client.command(f"TRUNCATE TABLE nour_bronze.{table_name}")
     rows = fetch_table(table_name)
     print(f"Extracted {len(rows)} rows from {table_name}")
     load_rows(table_name, rows)

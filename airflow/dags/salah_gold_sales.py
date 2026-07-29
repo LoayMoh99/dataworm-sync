@@ -4,14 +4,13 @@ from airflow.operators.python import PythonOperator
 import sys
 import os
 
-# إضافة فولدر الـ plugins للـ sys.path لضمان الـ Imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../plugins')))
+# إضافة فولدر الـ plugins للـ sys.path
+plugins_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../plugins'))
+if plugins_folder not in sys.path:
+    sys.path.append(plugins_folder)
 
-# استدعاء ملف الـ utils المخصص للـ ClickHouse
-try:
-    from utils import clickhouse
-except ImportError:
-    import utils.clickhouse as clickhouse
+# استدعاء ملف الـ utils المباشر
+import utils.clickhouse as ch_utils
 
 default_args = {
     'owner': 'salah',
@@ -22,11 +21,23 @@ default_args = {
 }
 
 def create_gold_star_schema():
-    # التأكد من اسم الدالة المستدعاة من ملف clickhouse
-    query_runner = getattr(clickhouse, 'execute_query', getattr(clickhouse, 'execute_clickhouse_query', None))
+    # البحث عن اسم الدالة الموجودة داخل clickhouse.py ديناميكياً
+    possible_names = ['execute_query', 'execute_clickhouse_query', 'run_query', 'execute']
+    query_runner = None
     
+    for name in possible_names:
+        if hasattr(ch_utils, name):
+            query_runner = getattr(ch_utils, name)
+            break
+            
     if not query_runner:
-        raise AttributeError("لم يتم العثور على دالة تنفيذ الاستعلامات داخل utils.clickhouse")
+        # لو اسم الدالة مختلف خالص، هيجيب كل الدوال المتاحة جوه الملف ويختار أول واحدة
+        functions = [getattr(ch_utils, f) for f in dir(ch_utils) if callable(getattr(ch_utils, f)) and not f.startswith("__")]
+        if functions:
+            query_runner = functions[0]
+
+    if not query_runner:
+        raise AttributeError("لم يتم العثور على أي دالة تنفيذ داخل utils/clickhouse.py")
 
     query_runner("CREATE DATABASE IF NOT EXISTS salah_gold;")
 

@@ -1,3 +1,5 @@
+Truncate table nour_silver.sales;
+
 INSERT INTO nour_silver.sales
 SELECT
     sol.id AS sale_line_id,

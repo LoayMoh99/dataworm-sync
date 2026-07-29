@@ -1,3 +1,5 @@
+Truncate table nour_silver.customers;
+
 INSERT INTO nour_silver.customers
 SELECT
     p.id AS customer_id,

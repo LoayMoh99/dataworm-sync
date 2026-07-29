@@ -1,3 +1,5 @@
+Truncate table nour_gold.FactSales;
+
 INSERT INTO nour_gold.FactSales
 SELECT
     sale_line_id,

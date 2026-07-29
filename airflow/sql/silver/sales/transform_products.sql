@@ -1,3 +1,5 @@
+Truncate table nour_silver.products;
+
 INSERT INTO nour_silver.products
 SELECT
     pp.id AS product_id,

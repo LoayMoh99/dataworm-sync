@@ -46,6 +46,7 @@ def generate_dim_date():
                "month_name", "day", "day_of_week", "day_name", "is_weekend"]
 
     client = get_clickhouse_client()
+    client.command("TRUNCATE TABLE nour_gold.dim_date")
     client.insert("dim_date", rows, column_names=columns)
     print(f"Loaded {len(rows)} rows into nour_gold.dim_date")
 

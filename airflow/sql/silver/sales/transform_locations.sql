@@ -1,3 +1,5 @@
+Truncate table nour_silver.locations;
+
 INSERT INTO nour_silver.locations
 SELECT
     l.id AS location_id,
